@@ -1,2 +1,5 @@
 @import "tailwind-preset-mantine";
+@import "tailwindcss" important;
 @import "./theme.css";
+
+

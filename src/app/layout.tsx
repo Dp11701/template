@@ -6,7 +6,8 @@ import {
 } from "@mantine/core";
 import theme from "./theme";
 import "./globals.css";
-
+import "@mantine/core/styles.css";
+import "@mantine/dropzone/styles.css";
 export const metadata: Metadata = {
   title: "Next App Mantine Tailwind Template",
   description: "Next App Mantine Tailwind Template",
