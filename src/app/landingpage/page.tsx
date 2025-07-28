@@ -1,15 +1,9 @@
 "use client";
 import Image from "next/image";
-import {
-  useQuery,
-  QueryClient,
-  QueryClientProvider,
-} from "@tanstack/react-query";
-import axios from "axios";
-import { Suspense } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Skeleton } from "@mantine/core";
-
-const queryClient = new QueryClient();
+import { useLandingPageConfig } from "@/hooks/useLandingPage";
+import { getApiUrl } from "@/lib/env";
 
 function LandingSkeleton() {
   return (
@@ -37,17 +31,36 @@ function LandingSkeleton() {
 }
 
 function LandingContent() {
-  const { data, isLoading } = useQuery({
-    queryKey: ["landing-config"],
-    queryFn: async () => {
-      const res = await axios.get("/api/landingpage");
-      return res.data.data;
-    },
-    staleTime: 1000 * 60, // 1 minute
-  });
+  const { data, isLoading, error } = useLandingPageConfig();
+  console.log("data", data);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Show skeleton until mounted to prevent hydration mismatch
+  if (!mounted) {
+    return <LandingSkeleton />;
+  }
 
   if (isLoading) {
     return <LandingSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">
+            Lỗi tải dữ liệu
+          </h2>
+          <p className="text-gray-600">
+            Không thể tải cấu hình landing page. Vui lòng thử lại sau.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   const config = data;
@@ -59,11 +72,15 @@ function LandingContent() {
   const descColor = config?.descColor || "#fff";
   const trackingLink = config?.trackingLink || "";
   const imageKey = config?.imageUrl || "";
+  console.log("imageKey", imageKey);
+  const apiUrl = getApiUrl();
+  console.log("apiUrl", apiUrl);
   const imageUrl = imageKey
-    ? `/api/image?key=${encodeURIComponent(imageKey)}`
+    ? `${apiUrl}/image?key=${encodeURIComponent(imageKey)}`
     : "/center-image.jpg";
+  console.log("imageUrl", imageUrl);
   const bgUrl = imageKey
-    ? `/api/image?key=${encodeURIComponent(imageKey)}`
+    ? `${apiUrl}/image?key=${encodeURIComponent(imageKey)}`
     : "/background.jpg";
 
   return (
@@ -74,6 +91,7 @@ function LandingContent() {
           src={bgUrl}
           alt="Background"
           fill
+          priority
           style={{ objectFit: "cover" }}
           className="blur-2xl brightness-75"
         />
@@ -98,19 +116,30 @@ function LandingContent() {
           alt="Center"
           width={800}
           height={800}
+          priority
           className="rounded-xl shadow-lg max-w-[60vw] max-h-[60vh] w-auto h-auto object-contain"
         />
       </div>
+      {trackingLink && (
+        <div className="mt-8">
+          <a
+            href={trackingLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-block px-6 py-3 bg-white bg-opacity-20 backdrop-blur-sm rounded-lg text-white font-medium hover:bg-opacity-30 transition-all duration-200"
+          >
+            Learn More
+          </a>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function LandingPage() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <Suspense fallback={<LandingSkeleton />}>
-        <LandingContent />
-      </Suspense>
-    </QueryClientProvider>
+    <Suspense fallback={<LandingSkeleton />}>
+      <LandingContent />
+    </Suspense>
   );
 }

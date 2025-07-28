@@ -14,6 +14,12 @@ import { DropzoneDemo } from "@/components/DropzoneDemo";
 import { useForm, Controller } from "react-hook-form";
 import { IconCheck, IconX, IconTrash } from "@tabler/icons-react";
 import { showNotification } from "@mantine/notifications";
+import React from "react";
+import {
+  useLandingPageConfig,
+  useSaveLandingPageConfig,
+  useUploadImage,
+} from "@/hooks/useLandingPage";
 
 interface LandingFormValues {
   brand: string;
@@ -24,21 +30,27 @@ interface LandingFormValues {
   descColor: string;
 }
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+
 export default function AdminLandingPage() {
   const [brandColorOpened, setBrandColorOpened] = useState(false);
   const [descColorOpened, setDescColorOpened] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<
     "idle" | "success" | "error"
   >("idle");
   const [uploadMessage, setUploadMessage] = useState<string>("");
-  const [saving, setSaving] = useState(false);
+
+  // Custom hooks
+  const { data: currentConfig, isLoading } = useLandingPageConfig();
+  const saveConfigMutation = useSaveLandingPageConfig();
+  const uploadImageMutation = useUploadImage();
 
   const {
     control,
     handleSubmit,
     watch,
     setValue,
+    reset,
     formState: { errors },
   } = useForm<LandingFormValues>({
     defaultValues: {
@@ -51,6 +63,20 @@ export default function AdminLandingPage() {
     },
   });
 
+  // Load current config into form when data is available
+  React.useEffect(() => {
+    if (currentConfig) {
+      reset({
+        brand: currentConfig.brand,
+        desc: currentConfig.desc,
+        tracking: currentConfig.trackingLink || "",
+        imageKey: currentConfig.imageUrl || "",
+        brandColor: currentConfig.brandColor,
+        descColor: currentConfig.descColor,
+      });
+    }
+  }, [currentConfig, reset]);
+
   // Watch for live preview
   const brand = watch("brand");
   const desc = watch("desc");
@@ -60,25 +86,19 @@ export default function AdminLandingPage() {
   const imageKey = watch("imageKey");
 
   async function handleImageUpload(file: File | null) {
+    console.log("file call api", file);
     if (!file) return;
-    setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-    const res = await fetch("/api/upload", {
-      method: "POST",
-      body: formData,
-    });
-    if (res.ok) {
-      const data = await res.json();
-      setValue("imageKey", data.key);
+
+    try {
+      const result = await uploadImageMutation.mutateAsync(file);
+      setValue("imageKey", result.key);
       setUploadStatus("success");
       setUploadMessage("Đã upload thành công!");
-    } else {
+    } catch (error) {
       setValue("imageKey", "");
       setUploadStatus("error");
       setUploadMessage("Upload thất bại. Vui lòng thử lại.");
     }
-    setUploading(false);
   }
 
   const handleDeleteImage = () => {
@@ -88,38 +108,23 @@ export default function AdminLandingPage() {
   };
 
   async function onSubmit(data: LandingFormValues) {
-    setSaving(true);
     try {
-      const res = await fetch("/api/landingpage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          brand: data.brand,
-          desc: data.desc,
-          trackingLink: data.tracking,
-          imageKey: data.imageKey,
-          brandColor: data.brandColor,
-          descColor: data.descColor,
-        }),
+      await saveConfigMutation.mutateAsync({
+        brand: data.brand,
+        desc: data.desc,
+        trackingLink: data.tracking,
+        imageKey: data.imageKey,
+        brandColor: data.brandColor,
+        descColor: data.descColor,
       });
-      setSaving(false);
-      if (res.ok) {
-        showNotification({
-          title: "Lưu thành công",
-          message: "Cấu hình landing page đã được lưu!",
-          color: "green",
-          icon: <IconCheck size={18} />,
-        });
-      } else {
-        showNotification({
-          title: "Lỗi",
-          message: "Không lưu được cấu hình.",
-          color: "red",
-          icon: <IconX size={18} />,
-        });
-      }
-    } catch (e) {
-      setSaving(false);
+
+      showNotification({
+        title: "Lưu thành công",
+        message: "Cấu hình landing page đã được lưu!",
+        color: "green",
+        icon: <IconCheck size={18} />,
+      });
+    } catch (error) {
       showNotification({
         title: "Lỗi",
         message: "Không lưu được cấu hình.",
@@ -131,8 +136,19 @@ export default function AdminLandingPage() {
 
   // Helper to get preview url
   const previewUrl = imageKey
-    ? `/api/image?key=${encodeURIComponent(imageKey)}`
+    ? `${API_BASE_URL}/image?key=${encodeURIComponent(imageKey)}`
     : "/center-image.jpg";
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Đang tải cấu hình...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col md:flex-row gap-8 p-8 bg-gray-50 min-h-screen">
@@ -288,20 +304,27 @@ export default function AdminLandingPage() {
               <div>
                 <DropzoneDemo
                   onDrop={async (files: File[]) => {
-                    if (!imageKey && files[0])
+                    console.log("files", files);
+                    if (files[0]) {
                       await handleImageUpload(files[0]);
+                    }
                   }}
                   onReject={() => {}}
-                  // disabled={!!imageKey}
                   uploadStatus={uploadStatus}
                   onDelete={handleDeleteImage}
-                  loading={uploading}
+                  loading={uploadImageMutation.isPending}
                 />
               </div>
             )}
           />
-          <Button type="submit" loading={uploading || saving}>
-            Save
+          <Button
+            type="submit"
+            loading={
+              uploadImageMutation.isPending || saveConfigMutation.isPending
+            }
+            disabled={saveConfigMutation.isPending}
+          >
+            {saveConfigMutation.isPending ? "Đang lưu..." : "Save"}
           </Button>
         </form>
       </Paper>
@@ -315,6 +338,7 @@ export default function AdminLandingPage() {
               width={180}
               height={180}
               alt="Background Blur"
+              priority
               className="absolute inset-0 w-full h-full object-cover blur-lg scale-110 z-0"
               style={{ filter: "blur(6px)", objectFit: "cover" }}
             />
@@ -340,6 +364,7 @@ export default function AdminLandingPage() {
               alt="Center Image"
               width={180}
               height={180}
+              priority
               className="rounded-xl border-4 border-white shadow-md object-cover"
             />
           </div>
